@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crew Pay Split — free performance-pay calculator for Jobber CSV exports</title>
+<meta name="description" content="Upload your Jobber jobs/visits CSV export, set a revenue percentage per technician, get each tech's performance pay for the pay period. Free, runs in your browser, nothing is uploaded.">
+<style>
+ body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem;color:#222;line-height:1.5}
+ h1{font-size:1.7rem;margin-bottom:.2rem} .sub{color:#555;margin-top:0}
+ .card{border:1px solid #ddd;border-radius:8px;padding:1rem 1.2rem;margin:1rem 0;background:#fafafa}
+ label{display:block;margin:.5rem 0 .2rem;font-weight:600} select,input{padding:.4rem;font-size:1rem}
+ table{border-collapse:collapse;width:100%;margin-top:1rem} th,td{border:1px solid #ddd;padding:.4rem .6rem;text-align:left} th{background:#eee}
+ .btn{display:inline-block;padding:.6rem 1rem;border-radius:6px;text-decoration:none;font-weight:600;margin:.3rem .3rem .3rem 0}
+ .primary{background:#1a56db;color:#fff} .secondary{background:#e5e7eb;color:#111}
+ .muted{color:#666;font-size:.9rem} footer{margin-top:2rem;font-size:.85rem;color:#666;border-top:1px solid #eee;padding-top:1rem}
+ .hide{display:none}
+</style>
+</head>
+<body>
+<h1>Crew Pay Split</h1>
+<p class="sub">Free performance-pay calculator for home-service crews. Upload the jobs or visits CSV you already export from Jobber, pick the technician and revenue columns, set the percentage — see every tech's pay for the period. Runs entirely in your browser; the file never leaves your computer.</p>
+
+<div class="card">
+  <label for="file">1. Jobber CSV export (Reports → Jobs or Visits → Export)</label>
+  <input type="file" id="file" accept=".csv,text/csv">
+  <p class="muted">Or paste CSV text:</p>
+  <textarea id="paste" rows="4" style="width:100%" placeholder="Technician,Client,Total&#10;Mike,Smith,450.00&#10;Mike,Jones,320.00&#10;Ana,Lee,600.00"></textarea>
+  <button class="btn secondary" id="load">Load</button>
+</div>
+
+<div class="card hide" id="mapcard">
+  <label for="techcol">2. Technician / assigned-to column</label><select id="techcol"></select>
+  <label for="revcol">Revenue / job total column</label><select id="revcol"></select>
+  <label for="rate">3. Percentage of revenue paid to the tech (%)</label><input type="number" id="rate" value="28" min="0" max="100" step="0.5">
+  <label for="split">Multi-tech jobs: split revenue equally between names separated by ";" or "," in the technician cell</label><input type="checkbox" id="split" checked>
+  <br><button class="btn primary" id="calc">Calculate</button>
+</div>
+
+<div class="card hide" id="out">
+  <h2>Pay for this period</h2>
+  <div id="table"></div>
+  <p class="muted" id="totals"></p>
+  <button class="btn secondary" id="dl">Download result CSV</button>
+</div>
+
+<div class="card">
+  <h2>Tired of exporting every pay period?</h2>
+  <p>We are deciding whether to build the automatic version: connects to your Jobber account (read-only), applies your pay rules (flat %, tiers, spiffs, base-pay floor, callbacks), and has the numbers ready on payday. Price target <strong>$29/month flat</strong>, no per-tech fee, cancel any time.</p>
+  <a class="btn primary" href="https://github.com/Aispotlightlab/jobber-paysplit/issues/new?title=Reserve%20auto-sync%20at%20%2429%2Fmo&body=Crew%20size%3A%20%0APay%20rule%20today%20(flat%20%25%2C%20tiers%2C%20hourly%2Bbonus)%3A%20%0AHours%20per%20pay%20period%20spent%20on%20this%3A%20" rel="nofollow">Reserve auto-sync at $29/mo (payment opens soon)</a>
+  <p class="muted">Reserving costs nothing and creates no obligation. We count reservations to decide whether to build it.</p>
+</div>
+
+<footer>Neutral validation project by AI Spotlight Lab. Not affiliated with Jobber. Calculations are a convenience only — verify against your own payroll rules.<br>
+Also from this lab: <a href="https://aispotlightlab.github.io/ab-condo-kit/">Alberta condo board kit</a> · <a href="https://aispotlightlab.github.io/ab-executor-kit/">Alberta executor kit</a></footer>
+
+<script>
+(function(){
+ let rows=[],headers=[];
+ function parseCSV(text){
+   const out=[];let row=[],cur='',q=false;
+   for(let i=0;i<text.length;i++){const c=text[i];
+     if(q){ if(c==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false;} else cur+=c; }
+     else if(c==='"') q=true;
+     else if(c===','){row.push(cur);cur='';}
+     else if(c==='\n'||c==='\r'){ if(c==='\r'&&text[i+1]==='\n') i++; row.push(cur);out.push(row);row=[];cur=''; }
+     else cur+=c; }
+   if(cur.length||row.length){row.push(cur);out.push(row);}
+   return out.filter(r=>r.length>1||(r.length===1&&r[0].trim()!==''));
+ }
+ function guess(sel,words){const opts=[...sel.options];const i=opts.findIndex(o=>words.some(w=>o.text.toLowerCase().includes(w)));if(i>=0)sel.selectedIndex=i;}
+ function setup(text){
+   const data=parseCSV(text); if(data.length<2){alert('Need a header row and at least one data row.');return;}
+   headers=data[0]; rows=data.slice(1);
+   const t=document.getElementById('techcol'),r=document.getElementById('revcol');
+   t.innerHTML=r.innerHTML=headers.map((h,i)=>`<option value="${i}">${h}</option>`).join('');
+   guess(t,['tech','assigned','team','employee','crew','worker']); guess(r,['total','revenue','amount','price','invoice']);
+   document.getElementById('mapcard').classList.remove('hide');
+ }
+ document.getElementById('load').onclick=()=>{const f=document.getElementById('file').files[0];
+   if(f){f.text().then(setup);} else setup(document.getElementById('paste').value);};
+ document.getElementById('file').onchange=e=>{const f=e.target.files[0]; if(f) f.text().then(setup);};
+ let result=[];
+ document.getElementById('calc').onclick=()=>{
+   const ti=+document.getElementById('techcol').value, ri=+document.getElementById('revcol').value;
+   const rate=(+document.getElementById('rate').value)/100, split=document.getElementById('split').checked;
+   const acc={}; let total=0,jobs=0;
+   rows.forEach(r=>{const rev=parseFloat(String(r[ri]||'').replace(/[^0-9.\-]/g,''))||0; if(!rev) return;
+     let names=String(r[ti]||'(unassigned)').trim(); names=split?names.split(/[;,]/).map(s=>s.trim()).filter(Boolean):[names];
+     if(!names.length) names=['(unassigned)']; const share=rev/names.length; total+=rev; jobs++;
+     names.forEach(n=>{acc[n]=acc[n]||{jobs:0,rev:0}; acc[n].jobs+=1/names.length; acc[n].rev+=share;}); });
+   result=Object.entries(acc).map(([n,v])=>({tech:n,jobs:v.jobs,rev:v.rev,pay:v.rev*rate})).sort((a,b)=>b.rev-a.rev);
+   const f=n=>n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+   document.getElementById('table').innerHTML='<table><tr><th>Technician</th><th>Jobs</th><th>Revenue produced</th><th>Pay @ '+(rate*100)+'%</th></tr>'+
+     result.map(x=>`<tr><td>${x.tech}</td><td>${x.jobs.toFixed(1)}</td><td>$${f(x.rev)}</td><td><strong>$${f(x.pay)}</strong></td></tr>`).join('')+'</table>';
+   document.getElementById('totals').textContent=`${jobs} jobs with revenue · $${f(total)} revenue · $${f(total*rate)} total performance pay (${(rate*100).toFixed(1)}% labor share)`;
+   document.getElementById('out').classList.remove('hide');
+ };
+ document.getElementById('dl').onclick=()=>{const csv='Technician,Jobs,Revenue,Pay\n'+result.map(x=>`"${x.tech.replace(/"/g,'""')}",${x.jobs.toFixed(2)},${x.rev.toFixed(2)},${x.pay.toFixed(2)}`).join('\n');
+   const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='crew-pay-split.csv';a.click();};
+})();
+</script>
+</body>
+</html>
